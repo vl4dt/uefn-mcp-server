@@ -13,6 +13,29 @@ Codex / Pi / VS Code agent  <--stdio-->  MCP Server (mcp_server.py)
 - **Main-thread safe** — all `unreal.*` calls dispatched via editor tick callback
 - **Verse-aware** — complements Epic's VS Code Verse extension without replacing it
 
+## Recommended Local Agent Workflow
+
+For UEFN developers working primarily in VS Code, use this stack:
+
+```text
+VS Code + Epic Verse extension
+  + Codex / Pi / local-model agent
+  + verse-uefn skill
+  + this MCP server
+  + uefn_listener.py running inside UEFN
+```
+
+Start with the dedicated guide: [Local Agent Setup for UEFN, VS Code, Verse, and MCP](docs/local_agent_setup.md).
+
+It covers:
+
+- installing the MCP server with mise
+- running the listener inside UEFN
+- configuring Codex, Pi with `pi-mcp-adapter`, and VS Code agents
+- installing the `verse-uefn` skill
+- choosing when to use Verse, Python editor automation, and MCP
+- complete example workflows for creating devices, fixing diagnostics, and multi-project work
+
 ## Quick Start
 
 ### 0. Let Claude do the setup
@@ -67,7 +90,7 @@ Create `.mcp.json` in your project root (or add to `~/.claude/settings.json`):
 
 ### 5. Restart Claude Code
 
-Claude Code picks up `.mcp.json` on startup. After restart, you'll have 28 UEFN tools available.
+Claude Code picks up `.mcp.json` on startup. After restart, the UEFN editor tools and Verse workspace tools should be available.
 
 ### Try it
 
@@ -174,7 +197,8 @@ Run via **Tools > Execute Python Script** in the UEFN menu bar.
 | Document | Description |
 |----------|-------------|
 | [Setup Guide](docs/setup.md) | Detailed installation and configuration |
-| [Tools Reference](docs/tools_reference.md) | All 28 tools with parameters, examples, and responses |
+| [Local Agent Setup](docs/local_agent_setup.md) | VS Code, Pi, Codex, local models, and the `verse-uefn` skill |
+| [Tools Reference](docs/tools_reference.md) | MCP tools with parameters, examples, and responses |
 | [Architecture](docs/architecture.md) | How the two-component system works internally |
 | [Agent Workflows](docs/agent_workflows.md) | Codex, Pi, VS Code/local model, and Python vs Verse usage |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |

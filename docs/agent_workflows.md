@@ -2,6 +2,8 @@
 
 This server is designed to complement Epic's UEFN + VS Code + Verse extension workflow.
 
+For a full installation path with VS Code, Pi, `pi-mcp-adapter`, local-model agents, and the `verse-uefn` skill, start with [Local Agent Setup](local_agent_setup.md).
+
 ## Mental Model
 
 ```text
@@ -103,4 +105,3 @@ Fix a Verse diagnostic loop:
 3. Patch with verse_write_file.
 4. Rebuild in UEFN and repeat until diagnostics are clear.
 ```
-
