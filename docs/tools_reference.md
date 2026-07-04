@@ -1,6 +1,6 @@
 # Tools Reference
 
-28 tools organized in 6 categories. Each tool maps 1:1 to a listener command.
+Tools are organized across UEFN editor automation and host-side Verse workspace operations.
 
 ---
 
@@ -34,6 +34,7 @@ Execute arbitrary Python code inside the UEFN editor. This is the most powerful 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `code` | string | yes | Python code to execute |
+| `confirm` | bool | yes | Must be `true` because this can run arbitrary editor Python |
 
 **Pre-populated globals:**
 
@@ -206,6 +207,7 @@ Delete actors by path name or label.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `actor_paths` | string[] | yes | Actor path names or labels to delete |
+| `confirm` | bool | yes | Must be `true` because this deletes level actors |
 
 **Response:**
 ```json
@@ -357,6 +359,7 @@ Delete an asset.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `asset_path` | string | yes | Asset path to delete |
+| `confirm` | bool | yes | Must be `true` because this deletes project content |
 
 **Response:**
 ```json
@@ -452,7 +455,11 @@ Search for assets using the Asset Registry with class and path filters.
 
 Save the current level.
 
-**Parameters:** none
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `confirm` | bool | yes | Must be `true` because this stops the listener |
 
 **Response:**
 ```json
@@ -601,3 +608,38 @@ Get the UEFN project name and content root path. Use this to determine the corre
 ```json
 { "project_name": "MyProject", "content_root": "/MyProject/", "project_dir": "../../../FortniteGame/" }
 ```
+
+---
+
+## Validation
+
+### `validate_project_state`
+
+Collect listener status, project info, level info, dirty assets where available, and recent warning/error/Verse log lines.
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `log_lines` | int | no | 200 | Recent editor log lines to scan |
+
+---
+
+## Verse Workspace
+
+These tools run in the host MCP process and operate inside `UEFN_PROJECT_ROOT` or the detected project root.
+
+| Tool | Description |
+|------|-------------|
+| `uefn_get_project_context` | Combine host Verse workspace context with live UEFN project info |
+| `verse_list_files` | List `.verse` files under the project |
+| `verse_read_file` | Read one `.verse` file inside the project root |
+| `verse_write_file` | Write one `.verse` file inside the project root |
+| `verse_create_device` | Create a Verse device or NPC behavior from a template |
+| `verse_get_templates` | Show available templates |
+| `verse_get_diagnostics` | Read recent Verse-related editor log lines |
+
+`verse_create_device` templates:
+
+- `basic_device`
+- `npc_behavior`
