@@ -3,7 +3,7 @@
 Control [UEFN](https://dev.epicgames.com/documentation/en-us/fortnite/unreal-editor-for-fortnite) (Unreal Editor for Fortnite) from MCP-capable agents via the [Model Context Protocol](https://modelcontextprotocol.io/), with additional host-side Verse workspace tools for VS Code workflows.
 
 ```
-Codex / Pi / VS Code agent  <--stdio-->  MCP Server (mcp_server.py)
+Claude Code / Codex / Pi / VS Code agent  <--stdio-->  MCP Server (mcp_server.py)
                                       |--> Verse workspace tools
                                       \--> HTTP listener (uefn_listener.py, inside UEFN)
 ```
@@ -19,7 +19,7 @@ For UEFN developers working primarily in VS Code, use this stack:
 
 ```text
 VS Code + Epic Verse extension
-  + Codex / Pi / local-model agent
+  + Claude Code / Codex / Pi / local-model agent
   + verse-uefn skill
   + this MCP server
   + uefn_listener.py running inside UEFN
@@ -31,7 +31,7 @@ It covers:
 
 - installing the MCP server with mise
 - running the listener inside UEFN
-- configuring Codex, Pi with `pi-mcp-adapter`, and VS Code agents
+- configuring Claude Code, Codex, Pi with `pi-mcp-adapter`, and VS Code agents
 - installing the `verse-uefn` skill
 - choosing when to use Verse, Python editor automation, and MCP
 - complete example workflows for creating devices, fixing diagnostics, and multi-project work
@@ -197,10 +197,10 @@ Run via **Tools > Execute Python Script** in the UEFN menu bar.
 | Document | Description |
 |----------|-------------|
 | [Setup Guide](docs/setup.md) | Detailed installation and configuration |
-| [Local Agent Setup](docs/local_agent_setup.md) | VS Code, Pi, Codex, local models, and the `verse-uefn` skill |
+| [Local Agent Setup](docs/local_agent_setup.md) | VS Code, Claude Code, Codex, Pi, local models, and the `verse-uefn` skill |
 | [Tools Reference](docs/tools_reference.md) | MCP tools with parameters, examples, and responses |
 | [Architecture](docs/architecture.md) | How the two-component system works internally |
-| [Agent Workflows](docs/agent_workflows.md) | Codex, Pi, VS Code/local model, and Python vs Verse usage |
+| [Agent Workflows](docs/agent_workflows.md) | Claude Code, Codex, Pi, VS Code/local model, and Python vs Verse usage |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [UEFN Python Capabilities](docs/uefn_python_capabilities.md) | Full API capabilities map — 37K types across 30 domains |
 

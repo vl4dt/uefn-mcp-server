@@ -2,12 +2,12 @@
 
 This server is designed to complement Epic's UEFN + VS Code + Verse extension workflow.
 
-For a full installation path with VS Code, Pi, `pi-mcp-adapter`, local-model agents, and the `verse-uefn` skill, start with [Local Agent Setup](local_agent_setup.md).
+For a full installation path with VS Code, Claude Code, Codex, Pi, `pi-mcp-adapter`, local-model agents, and the `verse-uefn` skill, start with [Local Agent Setup](local_agent_setup.md).
 
 ## Mental Model
 
 ```text
-VS Code / Codex / Pi + pi-mcp-adapter / local model
+VS Code / Claude Code / Codex / Pi + pi-mcp-adapter / local model
   -> MCP server
       -> Verse workspace tools
       -> UEFN editor HTTP bridge

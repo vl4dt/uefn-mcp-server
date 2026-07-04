@@ -3,7 +3,7 @@
 This guide is for UEFN developers who primarily work in VS Code and want a local agent workflow across:
 
 ```text
-VS Code / Codex / Pi / local model
+VS Code / Claude Code / Codex / Pi / local model
   -> UEFN MCP server
       -> Verse workspace tools
       -> UEFN editor HTTP bridge
@@ -20,7 +20,7 @@ The MCP server does not replace Epic's VS Code Verse extension. Keep Epic's exte
 | VS Code | Your normal editor for Verse and project files |
 | Epic Verse extension | Verse language support, diagnostics, UEFN-aware editing |
 | `verse-uefn` skill | Agent instructions for safe Verse/UEFN behavior |
-| MCP server | Tool bridge for agents such as Codex, Pi, or local-model VS Code agents |
+| MCP server | Tool bridge for agents such as Claude Code, Codex, Pi, or local-model VS Code agents |
 | Verse workspace tools | Safe project-root-limited file operations for `.verse` files |
 | UEFN listener | HTTP bridge running inside the editor process |
 | Unreal Python API | Editor automation only: actors, assets, levels, viewport, logs |
@@ -53,6 +53,7 @@ Use **MCP** to coordinate both. The agent should edit Verse files through worksp
 - `mise` installed for host Python/tool management.
 - A local clone of this repository.
 - One or more MCP clients:
+  - Claude Code
   - Codex
   - Pi with `pi-mcp-adapter`
   - a VS Code agent that can launch stdio MCP servers
@@ -109,7 +110,7 @@ Always ask the agent to call `uefn_get_project_context` before editing. If the r
 
 ## Install the Verse UEFN Skill
 
-The skill teaches Pi/Codex-style agents how to work with Verse, UEFN, VS Code, and this MCP server without confusing runtime gameplay code with editor automation.
+The skill teaches agents how to work with Verse, UEFN, VS Code, and this MCP server without confusing runtime gameplay code with editor automation. It is useful anywhere your client supports local skills or promptable reusable instructions.
 
 For Pi:
 
@@ -131,11 +132,37 @@ After installing it, use prompts such as:
 Use the verse-uefn skill. Connect to the UEFN MCP server, inspect project context, and help me create a Verse device for a timed scoring mechanic.
 ```
 
-For Codex or another agent with local skill support, install the same repository into that agent's skill directory. The important file is:
+For Claude Code, Codex, or another agent with local skill support, install the same repository into that agent's skill directory. The important file is:
 
 ```text
 skills/verse-uefn/SKILL.md
 ```
+
+If your client does not have native skill installation, keep the repository available and explicitly reference the skill in prompts:
+
+```text
+Use the verse-uefn skill instructions from github.com/vl4dt/verse-uefn-skill while working with this UEFN MCP server.
+```
+
+## Claude Code MCP Configuration
+
+Example project-level `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "uefn": {
+      "command": "D:/Lab/UEFN-Projects/uefn-mcp-server/.venv/Scripts/python.exe",
+      "args": ["D:/Lab/UEFN-Projects/uefn-mcp-server/mcp_server.py"],
+      "env": {
+        "UEFN_PROJECT_ROOT": "D:/Lab/UEFN-Projects/MyIsland"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code after editing `.mcp.json`. Ask it to `ping` UEFN, call `uefn_get_project_context`, and then use the Verse tools only after the project root is correct.
 
 ## Codex MCP Configuration
 
