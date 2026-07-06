@@ -1,14 +1,40 @@
 # UEFN MCP Server
 
-Control [UEFN](https://dev.epicgames.com/documentation/en-us/fortnite/unreal-editor-for-fortnite) (Unreal Editor for Fortnite) from [Claude Code](https://docs.anthropic.com/en/docs/claude-code) via the [Model Context Protocol](https://modelcontextprotocol.io/).
+Control [UEFN](https://dev.epicgames.com/documentation/en-us/fortnite/unreal-editor-for-fortnite) (Unreal Editor for Fortnite) from MCP-capable agents via the [Model Context Protocol](https://modelcontextprotocol.io/), with additional host-side Verse workspace tools for VS Code workflows.
 
 ```
-Claude Code  <--stdio-->  MCP Server (mcp_server.py)  <--HTTP-->  Listener (uefn_listener.py, inside UEFN)
+Claude Code / Codex / Pi / VS Code agent  <--stdio-->  MCP Server (mcp_server.py)
+                                      |--> Verse workspace tools
+                                      \--> HTTP listener (uefn_listener.py, inside UEFN)
 ```
 
-- **28 tools**: actors, assets, levels, viewport, project info, editor log, and arbitrary Python execution
+- **36+ tools**: actors, assets, levels, viewport, project info, editor log, Verse files/templates/diagnostics, and guarded Python execution
 - **Zero C++ compilation** — pure Python, works across UEFN versions
 - **Main-thread safe** — all `unreal.*` calls dispatched via editor tick callback
+- **Verse-aware** — complements Epic's VS Code Verse extension without replacing it
+
+## Recommended Local Agent Workflow
+
+For UEFN developers working primarily in VS Code, use this stack:
+
+```text
+VS Code + Epic Verse extension
+  + Claude Code / Codex / Pi / local-model agent
+  + verse-uefn skill
+  + this MCP server
+  + uefn_listener.py running inside UEFN
+```
+
+Start with the dedicated guide: [Local Agent Setup for UEFN, VS Code, Verse, and MCP](docs/local_agent_setup.md).
+
+It covers:
+
+- installing the MCP server with mise
+- running the listener inside UEFN
+- configuring Claude Code, Codex, Pi with `pi-mcp-adapter`, and VS Code agents
+- installing the `verse-uefn` skill
+- choosing when to use Verse, Python editor automation, and MCP
+- complete example workflows for creating devices, fixing diagnostics, and multi-project work
 
 ## Quick Start
 
@@ -37,12 +63,14 @@ A **status window** will appear showing:
 
 You can safely close this window — the listener continues running in the background.
 
-### 3. Install MCP SDK
+### 3. Install host dependencies
 
-On your system (not inside UEFN):
+On your system (not inside UEFN), using mise:
 
 ```bash
-pip install mcp
+mise install
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .[dev]
 ```
 
 ### 4. Configure Claude Code
@@ -62,7 +90,7 @@ Create `.mcp.json` in your project root (or add to `~/.claude/settings.json`):
 
 ### 5. Restart Claude Code
 
-Claude Code picks up `.mcp.json` on startup. After restart, you'll have 28 UEFN tools available.
+Claude Code picks up `.mcp.json` on startup. After restart, the UEFN editor tools and Verse workspace tools should be available.
 
 ### Try it
 
@@ -95,6 +123,7 @@ UEFN automatically executes `init_unreal.py` on project open.
 | **Level** | `save_current_level`, `get_level_info` |
 | **Viewport** | `get_viewport_camera`, `set_viewport_camera` |
 
+The `execute_python`, `delete_asset`, `delete_actors`, and `shutdown` tools require `confirm=True`.
 The `execute_python` tool is the most powerful — it runs arbitrary Python code inside the editor with full access to the `unreal` module:
 
 ```python
@@ -168,8 +197,10 @@ Run via **Tools > Execute Python Script** in the UEFN menu bar.
 | Document | Description |
 |----------|-------------|
 | [Setup Guide](docs/setup.md) | Detailed installation and configuration |
-| [Tools Reference](docs/tools_reference.md) | All 28 tools with parameters, examples, and responses |
+| [Local Agent Setup](docs/local_agent_setup.md) | VS Code, Claude Code, Codex, Pi, local models, and the `verse-uefn` skill |
+| [Tools Reference](docs/tools_reference.md) | MCP tools with parameters, examples, and responses |
 | [Architecture](docs/architecture.md) | How the two-component system works internally |
+| [Agent Workflows](docs/agent_workflows.md) | Claude Code, Codex, Pi, VS Code/local model, and Python vs Verse usage |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [UEFN Python Capabilities](docs/uefn_python_capabilities.md) | Full API capabilities map — 37K types across 30 domains |
 
@@ -177,8 +208,9 @@ Run via **Tools > Execute Python Script** in the UEFN menu bar.
 
 - UEFN editor with Python scripting enabled (Project Settings)
 - Python 3.10+ on host system
-- `pip install mcp`
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
+- Host Python 3.10+ managed by mise recommended
+- `pip install -e .`
+- MCP-capable client such as Codex, Claude Code, Pi via `pi-mcp-adapter`, or a VS Code agent
 
 ## License
 

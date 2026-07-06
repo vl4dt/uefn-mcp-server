@@ -53,17 +53,23 @@ cp init_unreal.py     <YourUEFNProject>/Content/Python/init_unreal.py
 
 The listener will start automatically every time you open the project in UEFN.
 
-## Step 3: Install MCP SDK
+## Step 3: Install Host Dependencies
 
-On your system (not inside UEFN):
+On your system (not inside UEFN), using mise. Run these commands from the `uefn-mcp-server` repository, not from your UEFN project or the `verse-uefn` skill repository:
 
-```bash
-pip install mcp
+```powershell
+Set-Location D:\Lab\UEFN-Projects\uefn-mcp-server
+Test-Path .\pyproject.toml
+mise install
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .[dev]
 ```
 
+`Test-Path .\pyproject.toml` must print `True`. If pip says the current folder is not a Python project, you are in the wrong directory.
+
 Verify:
-```bash
-python -c "from mcp.server.fastmcp import FastMCP; print('OK')"
+```powershell
+.\.venv\Scripts\python.exe -c "from mcp.server.fastmcp import FastMCP; print('OK')"
 ```
 
 ## Step 4: Configure Claude Code
@@ -76,8 +82,11 @@ Create `.mcp.json` in your project root:
 {
   "mcpServers": {
     "uefn": {
-      "command": "python",
-      "args": ["/path/to/uefn-mcp-server/mcp_server.py"]
+          "command": "D:/path/to/uefn-mcp-server/.venv/Scripts/python.exe",
+          "args": ["D:/path/to/uefn-mcp-server/mcp_server.py"],
+          "env": {
+            "UEFN_PROJECT_ROOT": "D:/path/to/YourUefnProject"
+          }
     }
   }
 }
@@ -136,6 +145,33 @@ claude
 ```
 
 The UEFN MCP tools should now be available. Test with: "ping the UEFN editor".
+
+## Pi and VS Code Agents
+
+Pi via `pi-mcp-adapter` and VS Code MCP-capable agents should launch the same stdio command:
+
+```json
+{
+  "uefn": {
+    "command": "D:/path/to/uefn-mcp-server/.venv/Scripts/python.exe",
+    "args": ["D:/path/to/uefn-mcp-server/mcp_server.py"],
+    "env": {
+      "UEFN_PROJECT_ROOT": "D:/path/to/YourUefnProject"
+    }
+  }
+}
+```
+
+See [Agent Workflows](agent_workflows.md) for the Python vs Verse split and local-model workflow.
+
+## Safety Gates
+
+The destructive or unrestricted tools require an explicit `confirm=true` argument:
+
+- `execute_python`
+- `delete_asset`
+- `delete_actors`
+- `shutdown`
 
 ## Listener Management
 

@@ -11,6 +11,7 @@ Or auto-start via init_unreal.py.
 
 import io
 import json
+import os
 import queue
 import socket
 import sys
@@ -180,6 +181,70 @@ def _serialize_actor(actor: unreal.Actor) -> dict:
     }
 
 
+class _NullContext:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def _transaction(label: str):
+    """Use the editor undo stack when available."""
+    scoped = getattr(unreal, "ScopedEditorTransaction", None)
+    if scoped is None:
+        return _NullContext()
+    return scoped(label)
+
+
+def _find_actor(actor_path: str):
+    actor_sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for actor in actor_sub.get_all_level_actors():
+        if actor.get_path_name() == actor_path or actor.get_actor_label() == actor_path:
+            return actor
+    return None
+
+
+def _project_content_root() -> str:
+    world = unreal.EditorLevelLibrary.get_editor_world()
+    if world:
+        parts = world.get_path_name().split("/")
+        if len(parts) >= 2 and parts[1]:
+            return f"/{parts[1]}/"
+    return "/Game/"
+
+
+def _content_directory(directory: str) -> str:
+    return directory or _project_content_root()
+
+
+def _recent_editor_log(last_n: int = 100, filter_str: str = "") -> dict:
+    """Read recent lines from the UE Output Log file."""
+    log_path = unreal.Paths.project_log_dir()
+    log_file = None
+    try:
+        log_dir = str(log_path)
+        log_files = [f for f in os.listdir(log_dir) if f.endswith(".log")]
+        if log_files:
+            log_files.sort(key=lambda f: os.path.getmtime(os.path.join(log_dir, f)), reverse=True)
+            log_file = os.path.join(log_dir, log_files[0])
+    except Exception:
+        pass
+
+    if not log_file:
+        return {"lines": [], "error": "Log file not found"}
+
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        lines = all_lines[-last_n:]
+        if filter_str:
+            lines = [line for line in lines if filter_str.lower() in line.lower()]
+        return {"lines": [line.rstrip() for line in lines], "count": len(lines), "file": log_file}
+    except Exception as e:
+        return {"lines": [], "error": str(e)}
+
+
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
@@ -339,12 +404,14 @@ def _cmd_spawn_actor(
         asset = unreal.EditorAssetLibrary.load_asset(asset_path)
         if asset is None:
             raise ValueError(f"Asset not found: {asset_path}")
-        actor = unreal.EditorLevelLibrary.spawn_actor_from_object(asset, loc, rot)
+        with _transaction("MCP Spawn Actor"):
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_object(asset, loc, rot)
     elif actor_class:
         cls = getattr(unreal, actor_class, None)
         if cls is None:
             raise ValueError(f"Class not found: {actor_class}")
-        actor = unreal.EditorLevelLibrary.spawn_actor_from_class(cls, loc, rot)
+        with _transaction("MCP Spawn Actor"):
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(cls, loc, rot)
     else:
         raise ValueError("Provide either asset_path or actor_class")
 
@@ -358,12 +425,13 @@ def _cmd_delete_actors(actor_paths: List[str]) -> dict:
     actor_sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     all_actors = actor_sub.get_all_level_actors()
     deleted = []
-    for path in actor_paths:
-        for actor in all_actors:
-            if actor.get_path_name() == path or actor.get_actor_label() == path:
-                actor_sub.destroy_actor(actor)
-                deleted.append(path)
-                break
+    with _transaction("MCP Delete Actors"):
+        for path in actor_paths:
+            for actor in all_actors:
+                if actor.get_path_name() == path or actor.get_actor_label() == path:
+                    actor_sub.destroy_actor(actor)
+                    deleted.append(path)
+                    break
     return {"deleted": deleted, "count": len(deleted)}
 
 
@@ -374,34 +442,23 @@ def _cmd_set_actor_transform(
     rotation: Optional[List[float]] = None,
     scale: Optional[List[float]] = None,
 ) -> dict:
-    actor_sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    all_actors = actor_sub.get_all_level_actors()
-    target = None
-    for a in all_actors:
-        if a.get_path_name() == actor_path or a.get_actor_label() == actor_path:
-            target = a
-            break
+    target = _find_actor(actor_path)
     if target is None:
         raise ValueError(f"Actor not found: {actor_path}")
 
-    if location is not None:
-        target.set_actor_location(unreal.Vector(*location), False, False)
-    if rotation is not None:
-        target.set_actor_rotation(unreal.Rotator(*rotation), False)
-    if scale is not None:
-        target.set_actor_scale3d(unreal.Vector(*scale))
+    with _transaction("MCP Set Actor Transform"):
+        if location is not None:
+            target.set_actor_location(unreal.Vector(*location), False, False)
+        if rotation is not None:
+            target.set_actor_rotation(unreal.Rotator(*rotation), False)
+        if scale is not None:
+            target.set_actor_scale3d(unreal.Vector(*scale))
     return {"actor": _serialize_actor(target)}
 
 
 @_register("get_actor_properties")
 def _cmd_get_actor_properties(actor_path: str, properties: List[str]) -> dict:
-    actor_sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    all_actors = actor_sub.get_all_level_actors()
-    target = None
-    for a in all_actors:
-        if a.get_path_name() == actor_path or a.get_actor_label() == actor_path:
-            target = a
-            break
+    target = _find_actor(actor_path)
     if target is None:
         raise ValueError(f"Actor not found: {actor_path}")
 
@@ -417,23 +474,18 @@ def _cmd_get_actor_properties(actor_path: str, properties: List[str]) -> dict:
 @_register("set_actor_properties")
 def _cmd_set_actor_properties(actor_path: str, properties: Dict[str, Any]) -> dict:
     """Set properties on an actor via set_editor_property."""
-    actor_sub = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    all_actors = actor_sub.get_all_level_actors()
-    target = None
-    for a in all_actors:
-        if a.get_path_name() == actor_path or a.get_actor_label() == actor_path:
-            target = a
-            break
+    target = _find_actor(actor_path)
     if target is None:
         raise ValueError(f"Actor not found: {actor_path}")
 
     set_results = {}
-    for prop, value in properties.items():
-        try:
-            target.set_editor_property(prop, value)
-            set_results[prop] = "ok"
-        except Exception as e:
-            set_results[prop] = f"<error: {e}>"
+    with _transaction("MCP Set Actor Properties"):
+        for prop, value in properties.items():
+            try:
+                target.set_editor_property(prop, value)
+                set_results[prop] = "ok"
+            except Exception as e:
+                set_results[prop] = f"<error: {e}>"
     return {"actor_path": actor_path, "properties": set_results}
 
 
@@ -456,7 +508,8 @@ def _cmd_select_actors(actor_paths: List[str], add_to_selection: bool = False) -
         current = actor_sub.get_selected_level_actors()
         to_select = list(current) + to_select
 
-    actor_sub.set_selected_level_actors(to_select)
+    with _transaction("MCP Select Actors"):
+        actor_sub.set_selected_level_actors(to_select)
     return {"selected": found, "count": len(found)}
 
 
@@ -503,39 +556,15 @@ def _cmd_focus_selected() -> dict:
 
 @_register("get_editor_log")
 def _cmd_get_editor_log(last_n: int = 100, filter_str: str = "") -> dict:
-    """Read recent lines from the UE Output Log file."""
-    log_path = unreal.Paths.project_log_dir()
-    log_file = None
-    try:
-        import os
-        log_dir = str(log_path)
-        # Find the most recent .log file
-        log_files = [f for f in os.listdir(log_dir) if f.endswith(".log")]
-        if log_files:
-            log_files.sort(key=lambda f: os.path.getmtime(os.path.join(log_dir, f)), reverse=True)
-            log_file = os.path.join(log_dir, log_files[0])
-    except Exception:
-        pass
-
-    if not log_file:
-        return {"lines": [], "error": "Log file not found"}
-
-    try:
-        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-            all_lines = f.readlines()
-        lines = all_lines[-last_n:]
-        if filter_str:
-            lines = [l for l in lines if filter_str.lower() in l.lower()]
-        return {"lines": [l.rstrip() for l in lines], "count": len(lines), "file": log_file}
-    except Exception as e:
-        return {"lines": [], "error": str(e)}
+    return _recent_editor_log(last_n=last_n, filter_str=filter_str)
 
 
 # -- Assets -----------------------------------------------------------------
 
 
 @_register("list_assets")
-def _cmd_list_assets(directory: str = "/Game/", recursive: bool = True, class_filter: str = "") -> dict:
+def _cmd_list_assets(directory: str = "", recursive: bool = True, class_filter: str = "") -> dict:
+    directory = _content_directory(directory)
     assets = unreal.EditorAssetLibrary.list_assets(directory, recursive=recursive)
     if class_filter:
         filtered = []
@@ -548,7 +577,7 @@ def _cmd_list_assets(directory: str = "/Game/", recursive: bool = True, class_fi
         assets = filtered
     else:
         assets = [str(a) for a in assets]
-    return {"assets": assets, "count": len(assets)}
+    return {"assets": assets, "count": len(assets), "directory": directory}
 
 
 @_register("get_asset_info")
@@ -570,19 +599,22 @@ def _cmd_get_selected_assets() -> dict:
 
 @_register("rename_asset")
 def _cmd_rename_asset(old_path: str, new_path: str) -> dict:
-    success = unreal.EditorAssetLibrary.rename_asset(old_path, new_path)
+    with _transaction("MCP Rename Asset"):
+        success = unreal.EditorAssetLibrary.rename_asset(old_path, new_path)
     return {"success": success, "old_path": old_path, "new_path": new_path}
 
 
 @_register("delete_asset")
 def _cmd_delete_asset(asset_path: str) -> dict:
-    success = unreal.EditorAssetLibrary.delete_asset(asset_path)
+    with _transaction("MCP Delete Asset"):
+        success = unreal.EditorAssetLibrary.delete_asset(asset_path)
     return {"success": success, "asset_path": asset_path}
 
 
 @_register("duplicate_asset")
 def _cmd_duplicate_asset(source_path: str, dest_path: str) -> dict:
-    result = unreal.EditorAssetLibrary.duplicate_asset(source_path, dest_path)
+    with _transaction("MCP Duplicate Asset"):
+        result = unreal.EditorAssetLibrary.duplicate_asset(source_path, dest_path)
     return {"success": result is not None, "source": source_path, "dest": dest_path}
 
 
@@ -599,9 +631,10 @@ def _cmd_save_asset(asset_path: str) -> dict:
 
 
 @_register("search_assets")
-def _cmd_search_assets(class_name: str = "", directory: str = "/Game/", recursive: bool = True) -> dict:
+def _cmd_search_assets(class_name: str = "", directory: str = "", recursive: bool = True) -> dict:
     # UEFN doesn't allow setting ARFilter properties on instances.
     # Fall back to list_assets + filter by class.
+    directory = _content_directory(directory)
     assets = unreal.EditorAssetLibrary.list_assets(directory, recursive=recursive)
     results = []
     for asset_path in assets:
@@ -613,7 +646,7 @@ def _cmd_search_assets(class_name: str = "", directory: str = "/Game/", recursiv
             if cls != class_name:
                 continue
         results.append(_serialize(data))
-    return {"assets": results, "count": len(results)}
+    return {"assets": results, "count": len(results), "directory": directory}
 
 
 # -- Project -----------------------------------------------------------------
@@ -633,8 +666,39 @@ def _cmd_get_project_info() -> dict:
             content_root = f"/{project_name}/"
     return {
         "project_name": project_name,
-        "content_root": content_root,
+        "content_root": content_root or _project_content_root(),
         "project_dir": str(unreal.Paths.project_dir()),
+        "project_content_dir": str(unreal.Paths.project_content_dir()),
+        "project_log_dir": str(unreal.Paths.project_log_dir()),
+    }
+
+
+@_register("validate_project_state")
+def _cmd_validate_project_state(log_lines: int = 200) -> dict:
+    """Collect a compact state report for agent validation loops."""
+    project = _cmd_get_project_info()
+    level = _cmd_get_level_info()
+    log = _recent_editor_log(last_n=log_lines)
+    error_lines = [
+        line for line in log.get("lines", [])
+        if "error" in line.lower() or "warning" in line.lower() or "verse" in line.lower()
+    ][-50:]
+
+    dirty_assets = []
+    try:
+        loading_utils = getattr(unreal, "EditorLoadingAndSavingUtils", None)
+        if loading_utils is not None and hasattr(loading_utils, "get_dirty_content_packages"):
+            dirty_assets = [str(pkg.get_name()) for pkg in loading_utils.get_dirty_content_packages()]
+    except Exception as e:
+        dirty_assets = [f"<error reading dirty packages: {e}>"]
+
+    return {
+        "listener": _cmd_status(),
+        "project": project,
+        "level": level,
+        "dirty_assets": dirty_assets,
+        "recent_issue_lines": error_lines,
+        "log_file": log.get("file", ""),
     }
 
 

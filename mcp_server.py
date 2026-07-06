@@ -1,13 +1,14 @@
 """MCP Server for UEFN Editor.
 
-External process that bridges Claude Code (stdio) to the UEFN HTTP listener.
-Requires: pip install mcp
+External process that bridges MCP clients (stdio) to the UEFN HTTP listener
+and host-side Verse workspace tools.
+Requires: pip install -e .
 
 Usage:
     python mcp_server.py
     python mcp_server.py --port 8765
 
-Claude Code config (~/.claude/settings.json or project .mcp.json):
+MCP client config:
     {
       "mcpServers": {
         "uefn": {
@@ -19,158 +20,39 @@ Claude Code config (~/.claude/settings.json or project .mcp.json):
 """
 
 import json
-import os
 import sys
-import threading
-import time
-import urllib.error
-import urllib.request
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-DEFAULT_PORT = int(os.environ.get("UEFN_MCP_PORT", "8765"))
-MAX_PORT = 8770
-REQUEST_TIMEOUT = 30.0
-
-_discovered_port: Optional[int] = None
-
-# ---------------------------------------------------------------------------
-# Port discovery
-# ---------------------------------------------------------------------------
+from uefn_mcp.client import REQUEST_TIMEOUT, UEFNClient, start_heartbeat
+from uefn_mcp.workspace import VerseWorkspace, get_templates
 
 
-def _discover_port() -> int:
-    """Find the listener by scanning the port range.
-
-    Tries the last known port first, then scans DEFAULT_PORT..MAX_PORT.
-    Caches the result so subsequent calls are instant.
-    """
-    global _discovered_port
-
-    # Fast path: already discovered and still alive
-    if _discovered_port is not None:
-        if _ping_port(_discovered_port):
-            return _discovered_port
-        _discovered_port = None
-
-    # Scan the range
-    for port in range(DEFAULT_PORT, MAX_PORT + 1):
-        if _ping_port(port):
-            _discovered_port = port
-            return port
-
-    raise ConnectionError(
-        f"UEFN listener not found on ports {DEFAULT_PORT}-{MAX_PORT}. "
-        "Start it in the UEFN editor console: py \"path/to/uefn_listener.py\""
-    )
-
-
-def _ping_port(port: int) -> bool:
-    """Quick check if a listener responds on the given port."""
-    try:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}",
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=1.0) as resp:
-            body = json.loads(resp.read().decode())
-            return body.get("status") == "ok"
-    except Exception:
-        return False
-
-
-# ---------------------------------------------------------------------------
-# HTTP client
-# ---------------------------------------------------------------------------
+client = UEFNClient()
 
 
 def _send_command(command: str, params: Optional[dict] = None, timeout: float = REQUEST_TIMEOUT) -> dict:
-    """Send a command to the UEFN listener and return the result.
-
-    Auto-discovers the listener port by scanning the range.
-
-    Raises:
-        ConnectionError: Listener is not running.
-        RuntimeError: Command failed on the UEFN side.
-        TimeoutError: Command timed out.
-    """
-    global _discovered_port
-
-    port = _discover_port()
-    url = f"http://127.0.0.1:{port}"
-
-    payload = json.dumps({"command": command, "params": params or {}}).encode()
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.loads(resp.read().decode())
-    except urllib.error.URLError as e:
-        # Port may have changed — invalidate cache and retry once
-        if _discovered_port is not None:
-            _discovered_port = None
-            return _send_command(command, params, timeout)
-        raise ConnectionError(
-            "UEFN listener is not running. "
-            "Start it in the UEFN editor console: py \"path/to/uefn_listener.py\""
-        ) from e
-    except Exception as e:
-        if "timed out" in str(e).lower():
-            raise TimeoutError(f"Command '{command}' timed out after {timeout}s") from e
-        raise
-
-    if not body.get("success", False):
-        error_msg = body.get("error", "Unknown error")
-        tb = body.get("traceback", "")
-        raise RuntimeError(f"UEFN command '{command}' failed: {error_msg}\n{tb}".strip())
-
-    return body.get("result", {})
+    return client.send_command(command, params, timeout)
 
 
 def _check_connection() -> str:
     """Quick connection check, returns status message."""
-    try:
-        port = _discover_port()
-        return f"Connected to UEFN on port {port}"
-    except ConnectionError:
-        return "NOT CONNECTED - UEFN listener is not running"
-    except Exception as e:
-        return f"Connection error: {e}"
+    return client.check_connection()
 
 
-# ---------------------------------------------------------------------------
-# Heartbeat — periodic ping so the listener knows we're alive
-# ---------------------------------------------------------------------------
-
-_HEARTBEAT_INTERVAL = 10.0
-
-
-def _heartbeat_loop() -> None:
-    """Ping the listener periodically."""
-    time.sleep(3.0)  # wait for listener to be ready
-    while True:
-        try:
-            port = _discover_port()
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{port}",
-                method="GET",
-            )
-            urllib.request.urlopen(req, timeout=2.0)
-        except Exception:
-            pass
-        time.sleep(_HEARTBEAT_INTERVAL)
+def _require_confirm(tool_name: str, confirm: bool) -> None:
+    if not confirm:
+        raise PermissionError(
+            f"{tool_name} is a dangerous operation. Re-run with confirm=True after reviewing the target."
+        )
 
 
-threading.Thread(target=_heartbeat_loop, daemon=True).start()
+def _workspace(root: str = "") -> VerseWorkspace:
+    return VerseWorkspace.discover(root or None)
+
+
+start_heartbeat(client)
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +63,7 @@ mcp = FastMCP(
     "uefn-mcp",
     instructions=(
         "MCP server for controlling UEFN (Unreal Editor for Fortnite). "
-        "Provides tools to manage actors, assets, levels, and viewport in the UEFN editor. "
+        "Provides tools to manage actors, assets, levels, viewport, and Verse files for a UEFN project. "
         "The 'execute_python' tool is the most powerful — it runs arbitrary Python code "
         "inside the editor with full access to the `unreal` module. "
         "Use structured tools for common operations and execute_python for everything else.\n\n"
@@ -203,7 +85,7 @@ def ping() -> str:
 
 
 @mcp.tool()
-def execute_python(code: str) -> str:
+def execute_python(code: str, confirm: bool = False) -> str:
     """Execute arbitrary Python code inside the UEFN editor.
 
     The code runs on the main editor thread with full access to the `unreal` module.
@@ -241,6 +123,7 @@ def execute_python(code: str) -> str:
         threading.Thread(target=show_window, daemon=True).start()
         result = "Window opened"
     """
+    _require_confirm("execute_python", confirm)
     result = _send_command("execute_python", {"code": code})
     parts = []
     if result.get("stdout"):
@@ -260,12 +143,13 @@ def get_log(last_n: int = 50) -> str:
 
 
 @mcp.tool()
-def shutdown() -> str:
+def shutdown(confirm: bool = False) -> str:
     """Gracefully stop the UEFN listener, freeing the port.
 
     The listener will finish the current request, then shut down.
     After this call the listener must be restarted from the UEFN console.
     """
+    _require_confirm("shutdown", confirm)
     result = _send_command("shutdown", timeout=5.0)
     return json.dumps(result, indent=2)
 
@@ -322,12 +206,13 @@ def spawn_actor(
 
 
 @mcp.tool()
-def delete_actors(actor_paths: list[str]) -> str:
+def delete_actors(actor_paths: list[str], confirm: bool = False) -> str:
     """Delete actors from the current level by path or label.
 
     Args:
         actor_paths: List of actor path names or labels to delete.
     """
+    _require_confirm("delete_actors", confirm)
     result = _send_command("delete_actors", {"actor_paths": actor_paths})
     return json.dumps(result, indent=2)
 
@@ -430,11 +315,11 @@ def get_editor_log(last_n: int = 100, filter_str: str = "") -> str:
 
 
 @mcp.tool()
-def list_assets(directory: str = "/Game/", recursive: bool = True, class_filter: str = "") -> str:
+def list_assets(directory: str = "", recursive: bool = True, class_filter: str = "") -> str:
     """List assets in a directory.
 
     Args:
-        directory: Content directory path (e.g. '/Game/', '/Game/Materials/').
+        directory: Content directory path. If empty, the listener uses the UEFN project content root.
         recursive: Include subdirectories.
         class_filter: Optional class name filter (e.g. 'Material', 'StaticMesh').
     """
@@ -473,12 +358,13 @@ def rename_asset(old_path: str, new_path: str) -> str:
 
 
 @mcp.tool()
-def delete_asset(asset_path: str) -> str:
+def delete_asset(asset_path: str, confirm: bool = False) -> str:
     """Delete an asset.
 
     Args:
         asset_path: Asset path to delete.
     """
+    _require_confirm("delete_asset", confirm)
     result = _send_command("delete_asset", {"asset_path": asset_path})
     return json.dumps(result, indent=2)
 
@@ -518,12 +404,12 @@ def save_asset(asset_path: str) -> str:
 
 
 @mcp.tool()
-def search_assets(class_name: str = "", directory: str = "/Game/", recursive: bool = True) -> str:
+def search_assets(class_name: str = "", directory: str = "", recursive: bool = True) -> str:
     """Search for assets using the Asset Registry.
 
     Args:
         class_name: Filter by class name (e.g. 'Material', 'Texture2D').
-        directory: Directory to search in.
+        directory: Directory to search in. If empty, the listener uses the UEFN project content root.
         recursive: Include subdirectories.
     """
     result = _send_command("search_assets", {"class_name": class_name, "directory": directory, "recursive": recursive})
@@ -542,6 +428,74 @@ def get_project_info() -> str:
     In UEFN the content root is '/{ProjectName}/', NOT '/Game/'.
     """
     result = _send_command("get_project_info")
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def validate_project_state(log_lines: int = 200) -> str:
+    """Report UEFN listener, project, level, asset, and recent error state."""
+    result = _send_command("validate_project_state", {"log_lines": log_lines})
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def uefn_get_project_context(project_root: str = "") -> str:
+    """Get combined host workspace and live UEFN project context."""
+    workspace_context = _workspace(project_root).context()
+    try:
+        editor_context = _send_command("get_project_info")
+    except Exception as exc:
+        editor_context = {"error": str(exc)}
+    return json.dumps({"workspace": workspace_context, "editor": editor_context}, indent=2)
+
+
+# -- Verse workspace tools ---------------------------------------------------
+
+
+@mcp.tool()
+def verse_list_files(project_root: str = "") -> str:
+    """List Verse files inside the configured or detected UEFN project root."""
+    result = {"files": _workspace(project_root).list_verse_files()}
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def verse_read_file(path: str, project_root: str = "") -> str:
+    """Read a Verse file inside the configured or detected UEFN project root."""
+    result = _workspace(project_root).read_verse_file(path)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def verse_write_file(path: str, content: str, overwrite: bool = True, project_root: str = "") -> str:
+    """Write a Verse file inside the UEFN project root."""
+    result = _workspace(project_root).write_verse_file(path, content, overwrite=overwrite)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def verse_create_device(
+    name: str,
+    template: str = "basic_device",
+    directory: str = "Verse",
+    overwrite: bool = False,
+    project_root: str = "",
+) -> str:
+    """Create a Verse device or NPC behavior file from a known-good template."""
+    result = _workspace(project_root).create_device(name, template=template, directory=directory, overwrite=overwrite)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def verse_get_templates() -> str:
+    """Return available Verse templates for agent-assisted file creation."""
+    return json.dumps(get_templates(), indent=2)
+
+
+@mcp.tool()
+def verse_get_diagnostics(last_n: int = 300) -> str:
+    """Return recent Verse-related diagnostics from the UEFN editor log."""
+    result = _send_command("get_editor_log", {"last_n": last_n, "filter_str": "Verse"})
     return json.dumps(result, indent=2)
 
 
@@ -600,6 +554,6 @@ if __name__ == "__main__":
     # Allow --port override (skips auto-discovery, uses fixed port)
     for i, arg in enumerate(sys.argv[1:], 1):
         if arg == "--port" and i < len(sys.argv) - 1:
-            _discovered_port = int(sys.argv[i + 1])
+            client.set_port(int(sys.argv[i + 1]))
 
     mcp.run()
