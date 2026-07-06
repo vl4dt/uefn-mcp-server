@@ -55,13 +55,17 @@ The listener will start automatically every time you open the project in UEFN.
 
 ## Step 3: Install Host Dependencies
 
-On your system (not inside UEFN), using mise:
+On your system (not inside UEFN), using mise. Run these commands from the `uefn-mcp-server` repository, not from your UEFN project or the `verse-uefn` skill repository:
 
 ```powershell
+Set-Location D:\Lab\UEFN-Projects\uefn-mcp-server
+Test-Path .\pyproject.toml
 mise install
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .[dev]
 ```
+
+`Test-Path .\pyproject.toml` must print `True`. If pip says the current folder is not a Python project, you are in the wrong directory.
 
 Verify:
 ```powershell

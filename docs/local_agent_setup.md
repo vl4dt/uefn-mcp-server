@@ -60,13 +60,17 @@ Use **MCP** to coordinate both. The agent should edit Verse files through worksp
 
 ## Install the MCP Server
 
-From this repository:
+Run these commands from the `uefn-mcp-server` repository, not from your UEFN project and not from the `verse-uefn` skill repository:
 
 ```powershell
+Set-Location D:\Lab\UEFN-Projects\uefn-mcp-server
+Test-Path .\pyproject.toml
 mise install
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .[dev]
 ```
+
+`Test-Path .\pyproject.toml` must print `True`. If pip says the current folder is not a Python project, you are in the wrong directory.
 
 Verify the host-side server dependencies:
 
